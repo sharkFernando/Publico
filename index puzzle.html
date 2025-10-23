@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="pt-pt">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Puzzle com Imagem Personalizada</title>
+  <style>
+    :root{ --cols:4; --rows:3; --gap:6px; }
+    body{ font-family: sans-serif; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; background:#f0f0f0; margin:0; padding:1rem; }
+    .board{ position:relative; width:90vmin; max-width:900px; aspect-ratio:4/3; background:#ccc; border-radius:10px; overflow:hidden; touch-action:none; margin-top:1rem; }
+    .piece{ position:absolute; background-repeat:no-repeat; background-size:calc(var(--cols) * 100%) calc(var(--rows) * 100%); cursor:grab; user-select:none; border-radius:5px; }
+    .piece:active{ cursor:grabbing; }
+    .fixed{ box-shadow:0 6px 18px rgba(0,0,0,.18); pointer-events:none; z-index:1; }
+    .hud{ position:absolute; top:10px; left:10px; background:rgba(255,255,255,.9); padding:6px 10px; border-radius:6px; font-size:14px; }
+    .complete{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.8); font-weight:bold; font-size:18px; flex-direction:column; }
+    #upload{ margin-bottom:1rem; }
+  </style>
+</head>
+<body>
+
+<h2>Puzzle com Sua Própria Imagem</h2>
+<input type="file" id="upload" accept="image/*">
+
+<div class="board" id="board"><div class="hud" id="hud">Peças: 0/0</div></div>
+
+<script>
+const cols = 4;
+const rows = 3;
+const gap = 6;
+const board = document.getElementById('board');
+const hud = document.getElementById('hud');
+document.documentElement.style.setProperty('--cols', cols);
+document.documentElement.style.setProperty('--rows', rows);
+document.documentElement.style.setProperty('--gap', gap + 'px');
+
+let pieceW, pieceH, boardRect;
+let pieces = [];
+
+document.getElementById('upload').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (file && file.type.startsWith('image/')) {
+    const url = URL.createObjectURL(file);
+    loadImage(url);
+  }
+});
+
+function loadImage(url) {
+  pieces = [];
+  board.innerHTML = '<div class="hud" id="hud">Peças: 0/0</div>';
+  const img = new Image();
+  img.onload = () => initPuzzle(url);
+  img.src = url;
+}
+
+function initPuzzle(imgUrl) {
+  boardRect = board.getBoundingClientRect();
+  pieceW = (boardRect.width - (cols - 1) * gap) / cols;
+  pieceH = (boardRect.height - (rows - 1) * gap) / rows;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const el = document.createElement('div');
+      el.className = 'piece';
+      el.style.width = pieceW + 'px';
+      el.style.height = pieceH + 'px';
+      el.style.backgroundImage = `url(${imgUrl})`;
+      el.style.backgroundPosition = `${(100 / (cols - 1)) * c}% ${(100 / (rows - 1)) * r}%`;
+
+      const correctX = c * (pieceW + gap);
+      const correctY = r * (pieceH + gap);
+
+      const piece = { el, correctX, correctY, x: 0, y: 0, fixed: false };
+      pieces.push(piece);
+      board.appendChild(el);
+
+      el.addEventListener('pointerdown', ev => startDrag(ev, piece));
+    }
+  }
+
+  shufflePieces();
+  updateHUD();
+}
+
+function shufflePieces() {
+  const maxX = boardRect.width - pieceW;
+  const maxY = boardRect.height - pieceH;
+  for (const p of pieces) {
+    let rx, ry;
+    do {
+      rx = Math.random() * maxX;
+      ry = Math.random() * maxY;
+    } while (Math.hypot(rx - p.correctX, ry - p.correctY) < pieceW / 2);
+
+    p.x = rx;
+    p.y = ry;
+    p.el.style.transform = `translate(${rx}px, ${ry}px)`;
+  }
+}
+
+let active = null;
+function startDrag(ev, piece) {
+  if (piece.fixed) return;
+  ev.preventDefault();
+  active = {
+    piece,
+    startX: ev.clientX,
+    startY: ev.clientY,
+    origX: piece.x,
+    origY: piece.y
+  };
+  piece.el.style.zIndex = 999;
+  piece.el.setPointerCapture(ev.pointerId);
+  window.addEventListener('pointermove', onDrag);
+  window.addEventListener('pointerup', stopDrag);
+}
+
+function onDrag(ev) {
+  if (!active) return;
+  const dx = ev.clientX - active.startX;
+  const dy = ev.clientY - active.startY;
+  const nx = active.origX + dx;
+  const ny = active.origY + dy;
+  active.piece.x = nx;
+  active.piece.y = ny;
+  active.piece.el.style.transform = `translate(${nx}px, ${ny}px)`;
+}
+
+function stopDrag(ev) {
+  if (!active) return;
+  const p = active.piece;
+  p.el.releasePointerCapture(ev.pointerId);
+  const dist = Math.hypot(p.x - p.correctX, p.y - p.correctY);
+  if (dist < pieceW * 0.35) {
+    p.x = p.correctX;
+    p.y = p.correctY;
+    p.fixed = true;
+    p.el.classList.add('fixed');
+    p.el.style.transform = `translate(${p.x}px, ${p.y}px)`;
+  }
